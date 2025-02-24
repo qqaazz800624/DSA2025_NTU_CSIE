@@ -61,8 +61,11 @@ void solve(int idx){
     int val;
     for (val = 0; val <= 1; val++){
         M[i][j] = val;
-        if (j == SIZE - 1 && i >= 2){
-            if (!check_row(i - 2)){
+        if (j == SIZE - 1){
+            if (i >= 1 && !check_row(i - 1)){
+                continue;
+            }
+            if (i >= 2 && !check_row(i - 2)){
                 continue;
             }
         }
