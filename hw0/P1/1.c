@@ -28,21 +28,8 @@ int relation(Employee *employee1, Employee *employee2){
     }
 
     // For colleague check, if an employee's boss pointer equals itself, treat it as NULL.
-    Employee *boss1;
-    if (employee1->boss == employee1){
-        boss1 = NULL;
-    } else {
-        boss1 = employee1->boss;
-    }
-    Employee *boss2;
-    if (employee2->boss == employee2){
-        boss2 = NULL;
-    } else {
-        boss2 = employee2->boss;
-    }
-
-    if (boss1 != NULL && boss1 == boss2){
-        return 3; // employee1 and employee2 are colleagues because they share the same boss.
+    if (employee1->boss != employee1 && employee2->boss != employee2 && employee1->boss == employee2->boss){
+        return 3; // employee1 and employee2 are colleagues.
     }
 
     // Otherwise, employee1 and employee2 are unrelated
