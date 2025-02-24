@@ -1,127 +1,84 @@
 #include <stdio.h>
 #include <stdbool.h>
 #include <stdlib.h>
+#include <string.h>
+
+#define MAX_N 10        // maximum number of players
+#define MAX_M 256       // maximum board dimension
+#define MAX_CALLS (MAX_M * MAX_M)
 
 int main(){
     int n, m;
     scanf("%d %d", &n, &m);
 
-    // Maximum n = 10, name length <= 64, so we use fixed arrays.
-    char names[11][65];
-    int boards[11][256][256]; // Maximu m = 256
-    bool marks[11][256][256] = {0}; // Marks for each board cell, initially all false.
-
+    char names[MAX_N][65];
+    int pos[MAX_N][MAX_M * MAX_M + 1][2];
     int i, r, c;
-    for (i = 0; i < n; i++) {
+
+    for (i = 0; i < n; i++){
         scanf("%s", names[i]);
-        for (r = 0; r < m; r++) {
-            for (c = 0; c < m; c++) {
-                scanf("%d", &boards[i][r][c]);
+        for (r = 0; r < m; r++){
+            for (c = 0; c < m; c++){
+                int num;
+                scanf("%d", &num);
+                pos[i][num][0] = r;
+                pos[i][num][1] = c;
             }
         }
     }
 
-    // Use dynamic array to store calls
     int totalCalls = m * m;
     int *calls;
     calls = malloc(totalCalls * sizeof(int));
     if (!calls) return 1;
-    for (i = 0; i < totalCalls; i++) {
+
+    for (i = 0; i < totalCalls; i++){
         scanf("%d", &calls[i]);
     }
 
-    bool winners[11] = {0}; // Maximum n = 10 players
-    bool foundWin = false;  // Flag to indicate if a player wins --> time to stop
-    int winningCall = -1;   // Record the winning call number, initialize to -1
+    int rowCount[MAX_N][MAX_M] = {0};
+    int colCount[MAX_N][MAX_M] = {0};
+    int diagCount[MAX_N] = {0};
+    int antiDiagCount[MAX_N] = {0};
+
+    bool winners[MAX_N] = {false};
+    bool foundWin = false;
+    int winningCall = -1;
 
     int callIdx, number;
     for (callIdx = 0; callIdx < totalCalls; callIdx++){
         number = calls[callIdx];
         for (i = 0; i < n; i++){
-            for (r = 0; r < m; r++){
-                for (c = 0; c < m; c++){
-                    if (boards[i][r][c] == number){
-                        marks[i][r][c] = true;
-                    }
-                }
-            }
-        }
+            int r = pos[i][number][0];
+            int c = pos[i][number][1];
 
-        // check each board, from rows, columns, main diagonal, anti-diagonal
-        for (i=0; i<n; i++){
-            bool win = false;
-            // check rows
-            for (r=0; r<m && !win; r++){
-                bool rowWin = true;
-                for (c=0; c<m; c++){
-                    if (!marks[i][r][c]){
-                        rowWin = false;
-                        break;
-                    }
-                }
-                if (rowWin){
-                    win = true;
-                }
+            rowCount[i][r]++;
+            colCount[i][c]++;
+
+            if (r == c){
+                diagCount[i]++;
             }
-            // check columns
-            for (c=0; c<m && !win; c++){
-                bool colWin = true;
-                for (r=0; r<m; r++){
-                    if (!marks[i][r][c]){
-                        colWin = false;
-                        break;
-                    }
-                }
-                if (colWin){
-                    win = true;
-                }
+
+            if (r + c == m - 1){
+                antiDiagCount[i]++;
             }
-            // check main diagonal
-            if (!win){
-                bool diagWin = true;
-                int d;
-                for (d=0; d<m; d++){
-                    if (!marks[i][d][d]){
-                        diagWin = false;
-                        break;
-                    }
-                }
-                if (diagWin){
-                    win = true;
-                }
-            }
-            // check anti-diagonal
-            if (!win){
-                bool antiDiagWin = true;
-                int d;
-                for (d=0; d<m; d++){
-                    if (!marks[i][d][m-1-d]){
-                        antiDiagWin = false;
-                        break;
-                    }
-                }
-                if (antiDiagWin){
-                    win = true;
-                }
-            }
-            if (win){
+
+            if (!winners[i] && (rowCount[i][r] == m || colCount[i][c] == m ||
+                                diagCount[i] == m || antiDiagCount[i] == m)){
                 winners[i] = true;
                 foundWin = true;
             }
         }
-
         if (foundWin){
             winningCall = number;
             break;
         }
     }
-
-    // release memory
     free(calls);
 
     if (winningCall != -1){
         printf("%d", winningCall);
-        for (i=0; i<n; i++){
+        for (i = 0; i < n; i++){
             if (winners[i]){
                 printf(" %s", names[i]);
             }
