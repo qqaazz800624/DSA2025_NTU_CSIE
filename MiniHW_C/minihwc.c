@@ -2,7 +2,7 @@
 #include <stdlib.h>
 #include <stdbool.h>
 
-
+void PrintStatus(int key, int l, int r);
 void Bin_Search(int a[], int key, int l, int r);
 
 int main(){
@@ -24,14 +24,14 @@ int main(){
     return 0;
 }
 
-void PrintStatus(int a[], int key, int l, int r){
+void PrintStatus(int key, int l, int r){
     printf("Searching %d in range [%d, %d].\n", key, l+1, r+1);
 }
 
 void Bin_Search(int a[], int key, int l, int r){
     bool found = false;
     while (l <= r){
-        PrintStatus(a, key, l, r);
+        PrintStatus(key, l, r);
         int m = (l + r) / 2;
         if (a[m] == key){
             printf("Found at index %d.\n", m+1);
@@ -44,7 +44,7 @@ void Bin_Search(int a[], int key, int l, int r){
         }
     }
     if (!found){
-        PrintStatus(a, key, l, r);
+        PrintStatus(key, l, r);
         printf("Not found.\n");
     }
 }
