@@ -85,11 +85,6 @@ void process_type_1(Diamonds *d, int Ni, long long vi) {
     for (int i = 0; i < Ni; i++) {
         d->value[d->size++] = vi;
     }
-
-    // for (int i = 0; i < d->size; i++) {
-    //     printf("%lld ", d->value[i]);
-    // }
-    // printf("\n");
 }
 
 int binary_search(Diamonds *d, long long key) {
@@ -131,10 +126,5 @@ void process_type_3(Diamonds *d, long long M) {
     qsort(d->value, d->size, sizeof(long long), cmp_desc);
     for (int i = 0; i < d->size; i++)
         d->value[i] += (M - i);
-
-    // for (int i = 0; i < d->size; i++) {
-    //     printf("%lld ", d->value[i]);
-    // }
-    // printf("\n");
 }
 

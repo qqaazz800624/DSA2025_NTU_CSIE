@@ -16,20 +16,21 @@ void process_type_1(Diamonds *d, int Ni, long long vi);
 void process_type_2(Diamonds *d, long long pi);
 void process_type_3(Diamonds *d, long long M);
 void free_list(Diamonds *d);
-void sort_list(Diamonds *d);
 
 int main() {
-    int T; long long M;
+    int T;
+    long long M;
     scanf("%d %lld", &T, &M);
 
-    Diamonds d; 
+    Diamonds d;
     init(&d);
 
     for (int i = 0; i < T; i++) {
         int op;
         scanf("%d", &op);
         if (op == 1) {
-            int Ni; long long vi;
+            int Ni;
+            long long vi;
             scanf("%d %lld", &Ni, &vi);
             process_type_1(&d, Ni, vi);
         } else if (op == 2) {
@@ -44,6 +45,7 @@ int main() {
     return 0;
 }
 
+
 void init(Diamonds *d) {
     d->head = d->tail = NULL;
     d->size = 0;
@@ -56,8 +58,11 @@ void process_type_1(Diamonds *d, int Ni, long long vi) {
     while (cur && cur->value < vi) {
         temp = cur;
         cur = cur->prev;
-        if (cur) cur->next = NULL;
-        else d->head = NULL;
+        if (cur) {
+            cur->next = NULL;
+        } else {
+            d->head = NULL;
+        }
         free(temp);
         d->size--;
         removed++;
@@ -74,17 +79,24 @@ void process_type_1(Diamonds *d, int Ni, long long vi) {
         Node *newNode = malloc(sizeof(Node));
         newNode->value = vi;
         newNode->prev = insert_after;
-        if (insert_after) {
+        if (insert_after){
             newNode->next = insert_after->next;
-            insert_after->next = newNode;
         } else {
             newNode->next = d->head;
+        }
+
+        if (insert_after) {
+            insert_after->next = newNode;
+        }
+        if (newNode->next) {
+            newNode->next->prev = newNode;
+        }
+        if (!newNode->prev) {
             d->head = newNode;
         }
-        if (newNode->next)
-            newNode->next->prev = newNode;
-        else
+        if (!newNode->next) {
             d->tail = newNode;
+        }
         insert_after = newNode;
         d->size++;
     }
@@ -94,7 +106,9 @@ void process_type_2(Diamonds *d, long long pi) {
     int cnt = 0;
     Node *cur = d->head;
     while (cur && cur->value >= pi) {
-        if (cur->value == pi) cnt++;
+        if (cur->value == pi) {
+            cnt++;
+        }
         cur = cur->next;
     }
     printf("%d\n", cnt);
@@ -108,32 +122,6 @@ void process_type_3(Diamonds *d, long long M) {
         rank++;
         cur = cur->next;
     }
-    sort_list(d);  
-}
-
-int cmp_desc(const void *a, const void *b) {
-    long long va = *(long long*)a, vb = *(long long*)b;
-    return (vb > va) - (vb < va);
-}
-
-void sort_list(Diamonds *d) {
-    if (d->size <= 1) return;
-
-    long long *arr = malloc(d->size * sizeof(long long));
-    Node *cur = d->head;
-    for (int i = 0; i < d->size; i++) {
-        arr[i] = cur->value;
-        cur = cur->next;
-    }
-
-    qsort(arr, d->size, sizeof(long long), cmp_desc);
-
-    cur = d->head;
-    for (int i = 0; i < d->size; i++) {
-        cur->value = arr[i];
-        cur = cur->next;
-    }
-    free(arr);
 }
 
 void free_list(Diamonds *d) {
@@ -144,3 +132,4 @@ void free_list(Diamonds *d) {
         free(temp);
     }
 }
+
