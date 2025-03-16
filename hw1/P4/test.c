@@ -131,9 +131,13 @@ void process_type_2(Diamonds *d, long long pi) {
 }
 
 void process_type_3(Diamonds *d, long long M) {
-    for (int i = 0; i < d->size; i++){
-        d->value[i] += (M - i);
+    long long *ptr = d->value;
+    for (int i = 0; i < d->size; i++, ptr++) {
+        *ptr += (M - i);
     }
+    // for (int i = 0; i < d->size; i++){
+    //     d->value[i] += (M - i);
+    // }
 
     // for (int i = 0; i < d->size; i++){
     //     printf("%lld ", d->value[i]);
