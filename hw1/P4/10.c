@@ -16,7 +16,6 @@ void resize(Diamonds *d, int new_capacity);
 void process_type_1(Diamonds *d, int Ni, long long vi);
 int binary_search(Diamonds *d, long long key);
 void process_type_2(Diamonds *d, long long pi);
-int cmp_desc(const void *a, const void *b);
 void process_type_3(Diamonds *d, long long M);
 
 int main() {
@@ -64,16 +63,24 @@ void resize(Diamonds *d, int new_capacity) {
 }
 
 void process_type_1(Diamonds *d, int Ni, long long vi) {
-    int new_size = 0, removed = 0; 
-    for (int i = 0; i < d->size; i++) {
-        if (d->value[i] >= vi) {
-            d->value[new_size++] = d->value[i];
-        } else {
-            removed++;
+    int removed = 0; 
+
+    if (d->size > 0 && d->value[0] < vi){
+        removed = d->size;
+        d->size = 0;
+    } else {
+        int new_size = 0;
+        for (int i = 0; i < d->size; i++){
+            if (d->value[i] >= vi) {
+                d->value[new_size++] = d->value[i];
+            } else {
+                removed++;
+            }
         }
+        d->size = new_size;
     }
+
     printf("%d\n", removed);
-    d->size = new_size; 
 
     if (d->size + Ni > d->capacity){
         int new_capacity = d->capacity;
@@ -83,8 +90,14 @@ void process_type_1(Diamonds *d, int Ni, long long vi) {
     }
 
     for (int i = 0; i < Ni; i++) {
-        d->value[d->size++] = vi;
+        d->value[d->size] = vi;
+        d->size++;
     }
+
+    // for (int i = 0; i < d->size; i++){
+    //     printf("%lld ", d->value[i]);
+    // }
+    // printf("\n");
 }
 
 int binary_search(Diamonds *d, long long key) {
@@ -117,14 +130,14 @@ void process_type_2(Diamonds *d, long long pi) {
     printf("%d\n", cnt);
 }
 
-int cmp_desc(const void *a, const void *b) {
-    long long x = *(const long long*)a, y = *(const long long*)b;
-    return (x < y) - (x > y);  
-}
-
 void process_type_3(Diamonds *d, long long M) {
-    qsort(d->value, d->size, sizeof(long long), cmp_desc);
-    for (int i = 0; i < d->size; i++)
+    for (int i = 0; i < d->size; i++){
         d->value[i] += (M - i);
+    }
+
+    // for (int i = 0; i < d->size; i++){
+    //     printf("%lld ", d->value[i]);
+    // }
+    // printf("\n");
 }
 
