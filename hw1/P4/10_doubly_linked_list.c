@@ -68,12 +68,12 @@ void process_type_1(Diamonds *d, int Ni, long long vi) {
         removed++;
     }
     d->tail = cur;
-
     printf("%d\n", removed);
 
     Node *insert_after = d->tail;
-    while (insert_after && insert_after->value < vi)
-        insert_after = insert_after->prev;
+    while (insert_after && insert_after->value < vi){
+        insert_after = insert_after->next;
+    }
 
     for (int i = 0; i < Ni; i++) {
         Node *newNode = malloc(sizeof(Node));
@@ -84,7 +84,6 @@ void process_type_1(Diamonds *d, int Ni, long long vi) {
         } else {
             newNode->next = d->head;
         }
-
         if (insert_after) {
             insert_after->next = newNode;
         }
