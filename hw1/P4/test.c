@@ -1,34 +1,36 @@
 #include <stdio.h>
 #include <stdlib.h>
 
-#define INIT_SIZE 100000
-
-typedef long long ll;
+typedef struct Node {
+    long long value;
+    struct Node *prev, *next;
+} Node;
 
 typedef struct {
-    long long *value;
+    Node *head, *tail;
     int size;
-    int capacity;
 } Diamonds;
 
 void init(Diamonds *d);
-void resize(Diamonds *d, int new_capacity);
 void process_type_1(Diamonds *d, int Ni, long long vi);
-int binary_search(Diamonds *d, long long key);
 void process_type_2(Diamonds *d, long long pi);
 void process_type_3(Diamonds *d, long long M);
+void free_list(Diamonds *d);
 
 int main() {
-    int T; long long M;
+    int T;
+    long long M;
     scanf("%d %lld", &T, &M);
+
     Diamonds d;
     init(&d);
 
     for (int i = 0; i < T; i++) {
-        int op; 
+        int op;
         scanf("%d", &op);
         if (op == 1) {
-            int Ni; long long vi;
+            int Ni;
+            long long vi;
             scanf("%d %lld", &Ni, &vi);
             process_type_1(&d, Ni, vi);
         } else if (op == 2) {
@@ -39,109 +41,107 @@ int main() {
             process_type_3(&d, M);
         }
     }
-    free(d.value);
+    free_list(&d);
     return 0;
 }
 
-void init(Diamonds *d) {
-    d->capacity = INIT_SIZE;
-    d->size = 0;
-    d->value = (long long *)malloc(d->capacity * sizeof(long long));
-    if (d->value == NULL) {
-        fprintf(stderr, "Memory allocation failed\n");
-        exit(1);
-    }
-}
 
-void resize(Diamonds *d, int new_capacity) {
-    d->capacity = new_capacity;
-    d->value = realloc(d->value, d->capacity * sizeof(long long));
-    if (d->value == NULL) {
-        fprintf(stderr, "Memory reallocation failed\n");
-        exit(1);
-    }
+void init(Diamonds *d) {
+    d->head = d->tail = NULL;
+    d->size = 0;
 }
 
 void process_type_1(Diamonds *d, int Ni, long long vi) {
-    int removed = 0; 
+    Node *cur = d->tail, *temp;
+    int removed = 0;
 
-    if (d->size > 0 && d->value[0] < vi){
+    if (d->head && d->head->value <vi){
+        Node *cur = d->head, *temp;
+        while (cur) {
+            temp = cur;
+            cur = cur->next;
+            free(temp);
+        }
+        d->head = d->tail = NULL;
         removed = d->size;
         d->size = 0;
     } else {
-        int new_size = 0;
-        for (int i = 0; i < d->size; i++){
-            if (d->value[i] >= vi) {
-                d->value[new_size++] = d->value[i];
+        Node *cur = d->tail, *temp;
+        while (cur && cur->value < vi) {
+            temp = cur;
+            cur = cur->prev;
+            if (cur) {
+                cur->next = NULL;
             } else {
-                removed++;
+                d->head = NULL;
             }
+            free(temp);
+            d->size--;
+            removed++;
         }
-        d->size = new_size;
+        d->tail = cur;
     }
-
     printf("%d\n", removed);
 
-    if (d->size + Ni > d->capacity){
-        int new_capacity = d->capacity;
-        while (d->size + Ni > new_capacity)
-            new_capacity *= 2;
-        resize(d, new_capacity);
+    Node *insert_after = d->tail;
+    while (insert_after && insert_after->value < vi){
+        insert_after = insert_after->next;
     }
 
     for (int i = 0; i < Ni; i++) {
-        d->value[d->size] = vi;
+        Node *newNode = malloc(sizeof(Node));
+        newNode->value = vi;
+        newNode->prev = insert_after;
+        if (insert_after){
+            newNode->next = insert_after->next;
+        } else {
+            newNode->next = d->head;
+        }
+        if (insert_after) {
+            insert_after->next = newNode;
+        }
+        if (newNode->next) {
+            newNode->next->prev = newNode;
+        }
+        if (!newNode->prev) {
+            d->head = newNode;
+        }
+        if (!newNode->next) {
+            d->tail = newNode;
+        }
+        insert_after = newNode;
         d->size++;
     }
-
-    // for (int i = 0; i < d->size; i++){
-    //     printf("%lld ", d->value[i]);
-    // }
-    // printf("\n");
-}
-
-int binary_search(Diamonds *d, long long key) {
-    int left = 0, right = d->size - 1;
-    while (left <= right) {
-        int mid = (left + right) / 2;
-        if (d->value[mid] == key) 
-            return mid;
-        else if (d->value[mid] < key)
-            right = mid - 1;
-        else
-            left = mid + 1;
-    }
-    return -1;
 }
 
 void process_type_2(Diamonds *d, long long pi) {
-    int idx = binary_search(d, pi);
-    if (idx == -1) { 
-        printf("0\n"); 
-        return; 
-    }
-    int cnt = 1, l = idx - 1, r = idx + 1;
-    while (l >= 0 && d->value[l--] == pi) {
-        cnt++;
-    }
-    while (r < d->size && d->value[r++] == pi) {
-        cnt++;
+    int cnt = 0;
+    Node *cur = d->head;
+    while (cur && cur->value >= pi) {
+        if (cur->value == pi) {
+            cnt++;
+        }
+        cur = cur->next;
     }
     printf("%d\n", cnt);
 }
 
 void process_type_3(Diamonds *d, long long M) {
-    long long *ptr = d->value;
-    for (int i = 0; i < d->size; i++, ptr++) {
-        *ptr += (M - i);
+    Node *cur = d->head;
+    int rank = 1;
+    while (cur) {
+        cur->value += (M - rank + 1);
+        rank++;
+        cur = cur->next;
     }
-    // for (int i = 0; i < d->size; i++){
-    //     d->value[i] += (M - i);
-    // }
+}
 
-    // for (int i = 0; i < d->size; i++){
-    //     printf("%lld ", d->value[i]);
-    // }
-    // printf("\n");
+void free_list(Diamonds *d) {
+    Node *cur = d->head, *temp;
+    while (cur) {
+        temp = cur;
+        cur = cur->next;
+        free(temp);
+    }
 }
 

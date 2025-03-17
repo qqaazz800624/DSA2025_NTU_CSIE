@@ -3,6 +3,8 @@
 
 typedef struct Node {
     long long value;
+    long long rank;
+    long long count;
     struct Node *prev, *next;
 } Node;
 
@@ -55,19 +57,32 @@ void process_type_1(Diamonds *d, int Ni, long long vi) {
     Node *cur = d->tail, *temp;
     int removed = 0;
 
-    while (cur && cur->value < vi) {
-        temp = cur;
-        cur = cur->prev;
-        if (cur) {
-            cur->next = NULL;
-        } else {
-            d->head = NULL;
+    if (d->head && d->head->value <vi){
+        Node *cur = d->head, *temp;
+        while (cur) {
+            temp = cur;
+            cur = cur->next;
+            free(temp);
         }
-        free(temp);
-        d->size--;
-        removed++;
+        d->head = d->tail = NULL;
+        removed = d->size;
+        d->size = 0;
+    } else {
+        Node *cur = d->tail, *temp;
+        while (cur && cur->value < vi) {
+            temp = cur;
+            cur = cur->prev;
+            if (cur) {
+                cur->next = NULL;
+            } else {
+                d->head = NULL;
+            }
+            free(temp);
+            d->size--;
+            removed++;
+        }
+        d->tail = cur;
     }
-    d->tail = cur;
     printf("%d\n", removed);
 
     Node *insert_after = d->tail;
