@@ -6,7 +6,7 @@
 struct Node* head;
 struct Node* tail;
 int next_node_id = 1;
-int list_length = 0;
+
 
 /*
 Finish your implementation for the 3 routines and 7 types of operations HERE
@@ -18,41 +18,46 @@ Finish your implementation for the 3 routines and 7 types of operations HERE
 // 2. newNode = New_XOR_Node(next ⊕ node)
 // 3. next->neighbors = next->neighbors ⊕ node ⊕ newNode    (if next != NULL)
 // 4. node->neighbors = prev ⊕ newNode
-// update list_length for insertion
 
 void Insert_After(struct Node* node, struct Node* prev) {
+
     struct Node* next = Next_Node(node, prev);
     struct Node* newNode = New_XOR_Node((struct Node*)((uintptr_t)node ^ (uintptr_t)next));
+
     if (next != NULL) {
         next->neighbors = (struct Node*)((uintptr_t)next->neighbors ^ (uintptr_t)node ^ (uintptr_t)newNode);
     }
+
     node->neighbors = (struct Node*)((uintptr_t)prev ^ (uintptr_t)newNode);
+
     if (node == tail) {
         tail = newNode;
     }
-    list_length++;
 }
 
 // Pseudo-code:
 // 1. next = Next_Node(node, prev)
 // 2. prev->neighbors = prev->neighbors ⊕ node ⊕ next   (if prev != NULL)
 // 3. next->neighbors = next->neighbors ⊕ node ⊕ prev   (if next != NULL)
-// 4. free(node) and decrement list_length
+// 4. free(node) 
 
 void Remove_Here(struct Node* node, struct Node* prev) {
+
     struct Node* next = Next_Node(node, prev);
+
     if (prev != NULL) {
         prev->neighbors = (struct Node*)((uintptr_t)prev->neighbors ^ (uintptr_t)node ^ (uintptr_t)next);
     } else {
         head = next;
     }
+
     if (next != NULL) {
         next->neighbors = (struct Node*)((uintptr_t)next->neighbors ^ (uintptr_t)node ^ (uintptr_t)prev);
     } else {
         tail = prev;
     }
+
     free(node);
-    list_length--;
 }
 
 // Pseudo-code:
@@ -79,7 +84,6 @@ void Reverse(struct Node* prev, struct Node* begin, struct Node* end, struct Nod
 // Helper function: Traverse to the k-th node (1-indexed).
 // Returns pointer to the k-th node and sets *out_prev to its previous node.
 static struct Node* traverse_to(int k, struct Node** out_prev) {
-    if (k < 1 || k > list_length) return NULL;
     struct Node* curr = head;
     struct Node* prev = NULL;
     for (int i = 1; i < k && curr != NULL; i++){
@@ -92,10 +96,16 @@ static struct Node* traverse_to(int k, struct Node** out_prev) {
     return curr;
 }
 
-
-// Helper function: Get the length of the XOR linked list.
-static int getLength(){
-    return list_length;
+static struct Node* traverse_from_tail(int k, struct Node** out_prev){
+    struct Node* curr = tail;
+    struct Node* prev = NULL;
+    for (int i = 1; i < k && curr != NULL; i++) {
+        struct Node* next = Next_Node(curr, prev);
+        prev = curr;
+        curr = next;
+    }
+    if (out_prev) *out_prev = prev;
+    return curr;
 }
 
 // type_0(k): Return the data field of the k-th node (1-indexed).
@@ -110,15 +120,10 @@ void type_1() {
     if (head == NULL) {
         head = tail = New_XOR_Node(NULL);
         head->neighbors = NULL;
-        list_length = 1;
     } else {
-        // Special-case for head insertion.
-        struct Node* newNode = New_XOR_Node(head); // newNode->neighbors = head (since XOR(NULL, head)=head)
-        // Update the old head's neighbor field: originally head->neighbors = (NULL XOR next) = next.
-        // Now update it to: (newNode XOR next)
+        struct Node* newNode = New_XOR_Node(head); 
         head->neighbors = (struct Node*)((uintptr_t)head->neighbors ^ (uintptr_t)newNode);
         head = newNode;
-        list_length++;
     }
 }
 
@@ -132,10 +137,10 @@ void type_2(int k) {
 
 // type_3(k): Insert-After at the k-th last node. New node becomes k-th last node.
 void type_3(int k) {
-    if (k < 1 || k > list_length) return;
-    int position = list_length - k + 1;
     struct Node* prev = NULL;
-    struct Node* curr = traverse_to(position, &prev);
+    struct Node* curr = traverse_from_tail(k, &prev);
+    struct Node* next = Next_Node(curr, prev);
+    prev = next;
     if (curr != NULL)
         Insert_After(curr, prev);
 }
@@ -150,28 +155,30 @@ void type_4(int k) {
 
 // type_5(k): Remove_Here at the k-th last node.
 void type_5(int k) {
-    if (k < 1 || k > list_length) return;
-    int position = list_length - k + 1;
     struct Node* prev = NULL;
-    struct Node* curr = traverse_to(position, &prev);
+    struct Node* curr = traverse_from_tail(k, &prev);
+    struct Node* next = Next_Node(curr, prev);
+    prev = next;
     if (curr != NULL)
         Remove_Here(curr, prev);
 }
 
 // type_6(k): Reverse from the k-th node to the k-th last node.
 void type_6(int k) {
-    int len = getLength();
-    int start = k;
-    int end = len - k + 1;
-    if (start < 1 || end > len || start >= end) {
-        return;
-    }
     struct Node* prev = NULL;
-    struct Node* begin = traverse_to(start, &prev);
+    struct Node* begin = traverse_to(k, &prev);
     struct Node* rprev = NULL;
-    struct Node* endNode = traverse_to(end, &rprev);
-    struct Node* next = Next_Node(endNode, rprev);
-    if (begin != NULL && endNode != NULL) {
-        Reverse(prev, begin, endNode, next);
+    struct Node* endNode = traverse_from_tail(k, &rprev);
+
+    if (begin == NULL || endNode == NULL || begin == endNode) return;
+    struct Node* next = rprev;
+
+    Reverse(prev, begin, endNode, next); 
+
+    if (head == begin) {
+        head = endNode;
+    }
+    if (tail == endNode) {
+        tail = begin;
     }
 }
