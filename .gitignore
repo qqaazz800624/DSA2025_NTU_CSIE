@@ -3,3 +3,5 @@
 *.zip
 public_files
 *.docx
+*.out
+*.in
