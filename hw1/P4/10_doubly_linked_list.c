@@ -1,149 +1,214 @@
 #include <stdio.h>
 #include <stdlib.h>
 
+typedef long long ll;
+
 typedef struct Node {
-    long long value;
-    long long rank;
-    long long count;
+    ll value;
+    ll diff;
+    ll count;
+    ll rank;
     struct Node *prev, *next;
 } Node;
 
-typedef struct {
-    Node *head, *tail;
-    int size;
-} Diamonds;
+Node *head = NULL, *tail = NULL;
+ll total_count = 0;      
+int pending = 0;         
+ll M_global = 0;         
 
-void init(Diamonds *d);
-void process_type_1(Diamonds *d, int Ni, long long vi);
-void process_type_2(Diamonds *d, long long pi);
-void process_type_3(Diamonds *d, long long M);
-void free_list(Diamonds *d);
+void merge_nodes();
+void flush_pending();
+ll process_removals(ll vi);
+void insert_node(int Ni, ll vi);
+void process_type_1(int Ni, ll vi);
+void process_type_2(ll pi);
+void process_type_3();
 
-int main() {
+int main(void) {
     int T;
-    long long M;
-    scanf("%d %lld", &T, &M);
-
-    Diamonds d;
-    init(&d);
-
+    scanf("%d %lld", &T, &M_global);
+    
     for (int i = 0; i < T; i++) {
         int op;
         scanf("%d", &op);
         if (op == 1) {
             int Ni;
-            long long vi;
+            ll vi;
             scanf("%d %lld", &Ni, &vi);
-            process_type_1(&d, Ni, vi);
+            process_type_1(Ni, vi);
         } else if (op == 2) {
-            long long pi;
+            ll pi;
             scanf("%lld", &pi);
-            process_type_2(&d, pi);
-        } else {
-            process_type_3(&d, M);
+            process_type_2(pi);
+        } else if (op == 3) {
+            process_type_3();
         }
     }
-    free_list(&d);
+    flush_pending();
+    
+    Node *cur = head;
+    while (cur) {
+        Node *tmp = cur;
+        cur = cur->next;
+        free(tmp);
+    }
     return 0;
 }
 
-
-void init(Diamonds *d) {
-    d->head = d->tail = NULL;
-    d->size = 0;
-}
-
-void process_type_1(Diamonds *d, int Ni, long long vi) {
-    Node *cur = d->tail, *temp;
-    int removed = 0;
-
-    if (d->head && d->head->value <vi){
-        Node *cur = d->head, *temp;
-        while (cur) {
-            temp = cur;
-            cur = cur->next;
-            free(temp);
-        }
-        d->head = d->tail = NULL;
-        removed = d->size;
-        d->size = 0;
-    } else {
-        Node *cur = d->tail, *temp;
-        while (cur && cur->value < vi) {
-            temp = cur;
-            cur = cur->prev;
-            if (cur) {
-                cur->next = NULL;
-            } else {
-                d->head = NULL;
-            }
-            free(temp);
-            d->size--;
-            removed++;
-        }
-        d->tail = cur;
-    }
-    printf("%d\n", removed);
-
-    Node *insert_after = d->tail;
-    while (insert_after && insert_after->value < vi){
-        insert_after = insert_after->next;
-    }
-
-    for (int i = 0; i < Ni; i++) {
-        Node *newNode = malloc(sizeof(Node));
-        newNode->value = vi;
-        newNode->prev = insert_after;
-        if (insert_after){
-            newNode->next = insert_after->next;
+void merge_nodes() {
+    Node *cur = head;
+    while (cur && cur->next) {
+        Node *nxt = cur->next;
+        ll last_val = cur->value + (cur->count - 1) * cur->diff;
+        if (cur->diff == nxt->diff && ((cur->diff == 0 && cur->value == nxt->value) ||
+            (cur->diff != 0 && last_val + cur->diff == nxt->value))) {
+            cur->count += nxt->count;
+            cur->next = nxt->next;
+            if (nxt->next)
+                nxt->next->prev = cur;
+            else
+                tail = cur;
+            free(nxt);
         } else {
-            newNode->next = d->head;
+            cur = cur->next;
         }
-        if (insert_after) {
-            insert_after->next = newNode;
-        }
-        if (newNode->next) {
-            newNode->next->prev = newNode;
-        }
-        if (!newNode->prev) {
-            d->head = newNode;
-        }
-        if (!newNode->next) {
-            d->tail = newNode;
-        }
-        insert_after = newNode;
-        d->size++;
     }
 }
 
-void process_type_2(Diamonds *d, long long pi) {
-    int cnt = 0;
-    Node *cur = d->head;
-    while (cur && cur->value >= pi) {
-        if (cur->value == pi) {
-            cnt++;
-        }
-        cur = cur->next;
+void flush_pending() {
+    if (pending == 0) {
+        return;
     }
-    printf("%d\n", cnt);
-}
-
-void process_type_3(Diamonds *d, long long M) {
-    Node *cur = d->head;
-    int rank = 1;
+    ll current_rank = 1;
+    Node *cur = head;
     while (cur) {
-        cur->value += (M - rank + 1);
-        rank++;
+        cur->rank = current_rank;
+        cur->value += pending * (M_global - current_rank + 1);
+        if (cur->diff == 0)
+            cur->diff = -pending;
+        else
+            cur->diff -= pending;
+        current_rank += cur->count;
         cur = cur->next;
     }
+    pending = 0;
+    merge_nodes();
 }
 
-void free_list(Diamonds *d) {
-    Node *cur = d->head, *temp;
+ll process_removals(ll vi) {
+    ll removed = 0;
+    Node *cur = tail;
     while (cur) {
-        temp = cur;
-        cur = cur->next;
-        free(temp);
+        ll smallest = cur->value + (cur->count - 1) * cur->diff;
+        if (smallest >= vi) {
+            break;
+        } else if (cur->value < vi) {
+            removed += cur->count;
+            total_count -= cur->count;
+            Node *prev = cur->prev;
+            if (prev)
+                prev->next = cur->next;
+            else
+                head = cur->next;
+            if (cur->next)
+                cur->next->prev = prev;
+            else
+                tail = prev;
+            Node *tmp = cur;
+            cur = prev;
+            free(tmp);
+        } else {
+            int keep = 0;
+            if (cur->diff == 0) {
+                keep = cur->count;
+            } else {
+                ll d = -cur->diff;
+                ll j = (cur->value - vi) / d; 
+                if (j >= cur->count) j = cur->count - 1;
+                keep = j + 1;
+            }
+            removed += (cur->count - keep);
+            total_count -= (cur->count - keep);
+            cur->count = keep;
+            break; 
+        }
     }
+    return removed;
 }
 
+void insert_node(int Ni, ll vi) {
+    Node *newNode = (Node*)malloc(sizeof(Node));
+    newNode->value = vi;
+    newNode->diff = 0;  
+    newNode->count = Ni;
+    newNode->rank = 0;  
+    newNode->prev = newNode->next = NULL;
+    if (!head) {
+        head = tail = newNode;
+        total_count += Ni;
+        return;
+    }
+    Node *cur = head;
+    Node *insertBefore = NULL;
+    while (cur) {
+        if (cur->value < vi) {
+            insertBefore = cur;
+            break;
+        }
+        cur = cur->next;
+    }
+    if (insertBefore == NULL) {
+        tail->next = newNode;
+        newNode->prev = tail;
+        tail = newNode;
+    } else {
+        newNode->next = insertBefore;
+        newNode->prev = insertBefore->prev;
+        if (insertBefore->prev)
+            insertBefore->prev->next = newNode;
+        else
+            head = newNode;
+        insertBefore->prev = newNode;
+    }
+    total_count += Ni;
+    merge_nodes();
+}
+
+void process_type_1(int Ni, ll vi) {
+    if (pending > 0) {
+        flush_pending();
+    }
+    ll removed = process_removals(vi);
+    printf("%lld\n", removed);
+    insert_node(Ni, vi);
+}
+
+void process_type_2(ll pi) {
+    if (pending > 0){
+        flush_pending();
+    }
+    ll ans = 0;
+    Node *cur = head;
+    while (cur) {
+        if (cur->diff == 0) {
+            if (cur->value == pi)
+                ans += cur->count;
+        } else {
+            ll last = cur->value + (cur->count - 1) * cur->diff;
+            if (pi <= cur->value && pi >= last) {
+                ll d = -cur->diff; 
+                if ((cur->value - pi) % d == 0) {
+                    ll idx = (cur->value - pi) / d;
+                    if (idx < cur->count)
+                        ans += 1;
+                }
+            }
+        }
+        cur = cur->next;
+    }
+    printf("%lld\n", ans);
+}
+
+void process_type_3() {
+    pending++;
+}
