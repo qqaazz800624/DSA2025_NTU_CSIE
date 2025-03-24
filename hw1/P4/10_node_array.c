@@ -65,7 +65,7 @@ int main(void) {
 }
 
 void initArray(NodeArray *arr) {
-    arr->capacity = 1024;
+    arr->capacity = 1000000;
     arr->size = 0;
     arr->data = (Node**)malloc(arr->capacity * sizeof(Node*));
 }

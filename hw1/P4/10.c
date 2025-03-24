@@ -1,143 +1,170 @@
 #include <stdio.h>
-#include <stdlib.h>
 
-#define INIT_SIZE 100000
-
+#define MAX_CAP 1000000
 typedef long long ll;
 
 typedef struct {
-    long long *value;
-    int size;
-    int capacity;
-} Diamonds;
+    ll value;
+    ll count;
+    ll rank;
+    ll initial_type3;
+} Node;
 
-void init(Diamonds *d);
-void resize(Diamonds *d, int new_capacity);
-void process_type_1(Diamonds *d, int Ni, long long vi);
-int binary_search(Diamonds *d, long long key);
-void process_type_2(Diamonds *d, long long pi);
-void process_type_3(Diamonds *d, long long M);
+Node nodes[MAX_CAP];
+int size = 0;
+ll pending = 0;
+ll M;
+ll acc[MAX_CAP];
 
-int main() {
-    int T; long long M;
-    scanf("%d %lld", &T, &M);
-    Diamonds d;
-    init(&d);
+void update_acc(int start) {
+    if (size == 0) return;
+    if (start == 0) {
+        acc[0] = nodes[0].count;
+        nodes[0].rank = 1;
+        start = 1;
+    }
+    for (int i = start; i < size; i++) {
+        acc[i] = acc[i - 1] + nodes[i].count;
+        nodes[i].rank = acc[i - 1] + 1;
+    }
+}
 
-    for (int i = 0; i < T; i++) {
-        int op; 
-        scanf("%d", &op);
-        if (op == 1) {
-            int Ni; long long vi;
-            scanf("%d %lld", &Ni, &vi);
-            process_type_1(&d, Ni, vi);
-        } else if (op == 2) {
-            long long pi;
-            scanf("%lld", &pi);
-            process_type_2(&d, pi);
+ll get_current_value(int idx) {
+    return nodes[idx].value + (pending - nodes[idx].initial_type3) * (M - nodes[idx].rank + 1);
+}
+
+ll get_current_diff(int idx) {
+    return pending - nodes[idx].initial_type3;
+}
+
+int binary_search(ll v) {
+    int low = 0, high = size - 1, result = size; 
+    while (low <= high) {
+        int mid = (low + high) / 2;
+        ll cur_val = get_current_value(mid);
+        ll diff = get_current_diff(mid);
+        ll last_val = cur_val - (nodes[mid].count - 1) * diff;
+
+        if (last_val < v) {
+            result = mid;
+            high = mid - 1;
         } else {
-            process_type_3(&d, M);
+            low = mid + 1;
         }
     }
-    free(d.value);
-    return 0;
+    return result;
 }
 
-void init(Diamonds *d) {
-    d->capacity = INIT_SIZE;
-    d->size = 0;
-    d->value = (long long *)malloc(d->capacity * sizeof(long long));
-    if (d->value == NULL) {
-        fprintf(stderr, "Memory allocation failed\n");
-        exit(1);
+void op1(int N, ll v) {
+    int idx = binary_search(v);
+    ll removed = 0;
+
+     // Check partially overlapped node at idx first (partial removal)
+     if (idx < size) {
+        ll cur_val = get_current_value(idx);
+        ll diff = get_current_diff(idx);
+        ll last_val = cur_val - (nodes[idx].count - 1) * diff;
+
+        if (cur_val >= v && last_val < v && diff != 0) {
+            ll keep = (cur_val - v) / diff + 1;
+            if (keep < nodes[idx].count) {
+                removed += nodes[idx].count - keep;
+                nodes[idx].count = keep;
+            }
+            update_acc(idx);
+            idx++; // we've handled idx partially, now remove from idx+1 onwards completely
+        }
     }
-}
 
-void resize(Diamonds *d, int new_capacity) {
-    d->capacity = new_capacity;
-    d->value = realloc(d->value, d->capacity * sizeof(long long));
-    if (d->value == NULL) {
-        fprintf(stderr, "Memory reallocation failed\n");
-        exit(1);
+    // Completely remove nodes after the idx (already handled partial at idx)
+    if (idx < size) {
+        removed += acc[size - 1] - (idx > 0 ? acc[idx - 1] : 0);
+        size = idx;
     }
+
+    printf("%lld\n", removed);
+
+    // Merge new node
+    if (size > 0) {
+        ll top_val = get_current_value(size - 1);
+        ll top_diff = get_current_diff(size - 1);
+        if (top_val == v && top_diff == 0) {
+            nodes[size - 1].count += N;
+            nodes[size - 1].initial_type3 = pending;
+            update_acc(size - 1);
+            return;
+        }
+    }
+
+    // insert new node
+    nodes[size].value = v;
+    nodes[size].count = N;
+    nodes[size].initial_type3 = pending;
+    size++;
+
+    update_acc(size - 1);
 }
 
-void process_type_1(Diamonds *d, int Ni, long long vi) {
-    int removed = 0; 
+void op2(ll p) {
+    ll ans = 0;
+    ll low = 0, high = size - 1;
+    ll mid = -1;
+    while (low <= high) {
+        mid = (low + high) / 2;
+        ll cur_val = get_current_value(mid);
+        if (cur_val == p) {
+            break;
+        }
+        if (cur_val < p) {
+            high = mid - 1;
+        } else {
+            low = mid + 1;
+        }
+    }
 
-    if (d->size > 0 && d->value[0] < vi){
-        removed = d->size;
-        d->size = 0;
-    } else {
-        int new_size = 0;
-        for (int i = 0; i < d->size; i++){
-            if (d->value[i] >= vi) {
-                d->value[new_size++] = d->value[i];
-            } else {
-                removed++;
+    for (ll i = mid - 1; i <= mid + 1; i++) {
+        if (i < 0 || i >= size) continue;
+        ll cur_val = get_current_value(i);
+        ll diff = get_current_diff(i);
+        ll last_val = cur_val - (nodes[i].count - 1) * diff;
+
+        if (cur_val >= p && last_val <= p) {
+            if (diff == 0 && cur_val == p) {
+                ans += nodes[i].count;
+            } else if (diff != 0 && (cur_val - p) % diff == 0) {
+                ans += 1;
             }
         }
-        d->size = new_size;
     }
 
-    printf("%d\n", removed);
-
-    if (d->size + Ni > d->capacity){
-        int new_capacity = d->capacity;
-        while (d->size + Ni > new_capacity)
-            new_capacity *= 2;
-        resize(d, new_capacity);
-    }
-
-    for (int i = 0; i < Ni; i++) {
-        d->value[d->size] = vi;
-        d->size++;
-    }
-
-    // for (int i = 0; i < d->size; i++){
-    //     printf("%lld ", d->value[i]);
-    // }
-    // printf("\n");
+    printf("%lld\n", ans);
 }
 
-int binary_search(Diamonds *d, long long key) {
-    int left = 0, right = d->size - 1;
-    while (left <= right) {
-        int mid = (left + right) / 2;
-        if (d->value[mid] == key) 
-            return mid;
-        else if (d->value[mid] < key)
-            right = mid - 1;
-        else
-            left = mid + 1;
-    }
-    return -1;
+
+
+void op3() {
+    pending++;
 }
 
-void process_type_2(Diamonds *d, long long pi) {
-    int idx = binary_search(d, pi);
-    if (idx == -1) { 
-        printf("0\n"); 
-        return; 
+int main() {
+    int T;
+    scanf("%d %lld", &T, &M);
+
+    for (int i = 0; i < T; i++) {
+        int op;
+        scanf("%d", &op);
+        if (op == 1) {
+            int N;
+            ll v;
+            scanf("%d %lld", &N, &v);
+            op1(N, v);
+        } else if (op == 2) {
+            ll p;
+            scanf("%lld", &p);
+            op2(p);
+        } else if (op == 3) {
+            op3();
+        }
     }
-    int cnt = 1, l = idx - 1, r = idx + 1;
-    while (l >= 0 && d->value[l--] == pi) {
-        cnt++;
-    }
-    while (r < d->size && d->value[r++] == pi) {
-        cnt++;
-    }
-    printf("%d\n", cnt);
+    return 0;
 }
-
-void process_type_3(Diamonds *d, long long M) {
-    for (int i = 0; i < d->size; i++){
-        d->value[i] += (M - i);
-    }
-
-    // for (int i = 0; i < d->size; i++){
-    //     printf("%lld ", d->value[i]);
-    // }
-    // printf("\n");
-}
-
