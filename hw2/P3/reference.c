@@ -126,8 +126,7 @@ void trickle_down_max(int i) {
 // Insert a new job into the min-max heap.
 void insert(Job newJob) {
     heapSize++;
-    heap[heapSize] = newJob;
-    // If it is the very first job, no need to bubble up.
+    heap[heapSize] = newJob; // Insert at the end of the heap.
     if(heapSize == 1)
         return;
 
