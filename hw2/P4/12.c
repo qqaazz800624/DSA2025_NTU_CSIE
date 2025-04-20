@@ -8,57 +8,177 @@
 
 typedef unsigned long long ull;
 
-// --- adjacency list for the tree ---
+int c[MAXN];     
+ull ls[MAXN];         
+int student_slot[MAXN];  
 int head[MAXN], to[2*MAXN], nxt[2*MAXN], w[2*MAXN], eidx;
-
-// --- LCA & Euler Tour ---
-int up[MAXN][MAX_LOG], depth[MAXN];
-long long dist0[MAXN];    // initial dist from root
-int tin[MAXN], tout[MAXN], timer;
-
-// --- Fenwick (BIT) for range‑add / point‑query on the Euler Tour index ---
+int N;
 long long bit[MAXN];
-int N; // number of nodes
+int up[MAXN][MAX_LOG], depth[MAXN];
+long long dist0[MAXN];    
+int tin[MAXN], tout[MAXN], timer;
+int slot_size[MAXN];
+struct pos {
+    int s;       
+    ull num, den;
+};
+struct pos slots[MAXN][30];
+struct notif {
+    ull t;
+    int s;
+};
+struct notif all_notifs[600000];
+int notif_count = 0;
+int fetched_ptr = 0;
 
-void bit_update(int i, long long v) {
-    for (; i <= N; i += i & -i) bit[i] += v;
-}
-long long bit_sum(int i) {
-    long long s = 0;
-    for (; i > 0; i -= i & -i) s += bit[i];
-    return s;
-}
+void add_edge(int u, int v, int ww);
+void dfs(int v, int p);
+int cmp_pos(const void *aa, const void *bb);
+void insert_bike(int s, int x, ull pnum, ull pden, int output);
+ull gcd(ull a, ull b);
+void park_bike(int s, int x, int p, int output);
+int lca(int a, int b);
+long long bit_sum(int i);
+long long currDist(int v);
+long long get_dist(int a, int b);
+void insert_notif(ull t, int s);
+void do_fetch(ull T);
+void bit_update(int i, long long v);
 
-// current distance to root of v, including all weight‐updates
-long long currDist(int v) {
-    return dist0[v] + bit_sum(tin[v]);
-}
+int main(){
 
-// compute LCA(a,b)
-int lca(int a, int b) {
-    if (depth[a] < depth[b]) { int t=a; a=b; b=t; }
-    for (int k = MAX_LOG-1; k >= 0; k--) {
-        if (depth[ up[a][k] ] >= depth[b]) {
-            a = up[a][k];
+    int n, m, q; // number of slots, students, queries
+    scanf("%d%d%d", &n, &m, &q);
+
+    for (int i = 0; i < n; i++) {
+        scanf("%d", &c[i]);
+    }
+
+    memset(student_slot, -1, m * sizeof student_slot[0]);
+    for (int i = 0; i < m; i++) {
+        scanf("%llu", &ls[i]);
+    }
+
+    memset(head, -1, sizeof head);
+    eidx = 0;
+    for (int i = 0, u, v, ww; i < n - 1; i++) {
+        scanf("%d%d%d", &u, &v, &ww);
+        add_edge(u, v, ww);
+    }
+
+    N = n;
+    memset(bit,0,sizeof(long long)*(n+2));
+    timer=0;
+    depth[0]=0; dist0[0]=0;
+    dfs(0,0);
+
+    for (int i = 0; i < q; i++){
+        int op;
+        scanf("%d", &op);
+        if (op == 0){
+            int s,x,p;
+            scanf("%d%d%d", &s, &x, &p);
+            park_bike(s, x, p, 1);
+        } else if (op == 1){
+            int s,x,p; scanf("%d%d%d",&s,&x,&p);
+            int src = student_slot[s];
+            if(src==x){
+                printf("%d moved to %d in 0 seconds.\n", s, x);
+                continue;
+            }
+            
+            if(src!=-1){
+                for(int j=0;j<slot_size[src];j++){
+                    if(slots[src][j].s==s){
+                        for(int k=j;k+1<slot_size[src];k++)
+                            slots[src][k]=slots[src][k+1];
+                        slot_size[src]--;
+                        break;
+                    }
+                }
+            }
+            park_bike(s,x,p,0);
+            long long tc = (src==-1?0:get_dist(src,x));
+            printf("%d moved to %d in %lld seconds.\n",s,x,tc);
+        } else if (op == 2){
+            int x; ull T; 
+            scanf("%d%llu", &x, &T);
+            for(int j=0;j<slot_size[x];j++){
+                int st = slots[x][j].s;
+                if(student_slot[st]==x){
+                    insert_notif(T + ls[st], st);
+                    student_slot[st] = -1;
+                }
+            }
+            slot_size[x]=0;
+        } else if (op == 3){
+            int x; ull T; 
+            scanf("%d%llu",&x,&T);
+            int cnt=0, nc=0;
+            struct pos tmp[30];
+
+            for(int j=0;j<slot_size[x];j++){
+                int st=slots[x][j].s;
+                if(slots[x][j].den>1 && student_slot[st]==x){
+                    insert_notif(T + ls[st], st);
+                    student_slot[st] = -1;
+                    cnt++;
+                } else {
+                    tmp[nc++] = slots[x][j];
+                }
+            }
+
+            for(int j=0;j<nc;j++){
+                slots[x][j]=tmp[j];
+            }
+
+            slot_size[x]=nc;
+            printf("Rearranged %d bikes in %d.\n",cnt,x);
+        } else if (op == 4){
+            ull T; scanf("%llu",&T);
+            do_fetch(T);
+        } else if (op == 5){
+            int x,y,d; 
+            scanf("%d%d%d",&x,&y,&d);
+            
+            long long oldw=0;
+            for(int e=head[x];e!=-1;e=nxt[e]){
+                if(to[e]==y){
+                    oldw=w[e]; 
+                    break; 
+                }
+            }
+            long long delta = (long long)d - oldw;
+            
+            for(int e=head[x];e!=-1;e=nxt[e]){
+                if(to[e]==y){
+                    w[e]=d;
+                }
+            }
+
+            for(int e=head[y];e!=-1;e=nxt[e]){
+                if(to[e]==x){
+                    w[e]=d;
+                }
+            }
+            
+            int child = (depth[x]>depth[y] ? x : y);
+            
+            bit_update(tin[child], delta);
+            if (tout[child]+1 <= N){
+                bit_update(tout[child]+1, -delta);
+            }
         }
     }
-    if (a == b) return a;
-    for (int k = MAX_LOG-1; k >= 0; k--) {
-        if (up[a][k] != up[b][k]) {
-            a = up[a][k];
-            b = up[b][k];
-        }
-    }
-    return up[a][0];
+
+    return 0;
 }
 
-// current distance between any two nodes
-long long get_dist(int a, int b) {
-    int c = lca(a,b);
-    return currDist(a) + currDist(b) - 2*currDist(c);
+void add_edge(int u, int v, int ww) {
+    to[eidx] = v; w[eidx] = ww; nxt[eidx] = head[u]; head[u] = eidx++;
+    to[eidx] = u; w[eidx] = ww; nxt[eidx] = head[v]; head[v] = eidx++;
 }
 
-// build DFS once at start to get tin/tout, dist0[], depth[], up[][].
 void dfs(int v, int p) {
     tin[v] = ++timer;
     up[v][0] = p;
@@ -74,62 +194,27 @@ void dfs(int v, int p) {
     tout[v] = timer;
 }
 
-void add_edge(int u, int v, int ww) {
-    to[eidx] = v; w[eidx] = ww; nxt[eidx] = head[u]; head[u] = eidx++;
-    to[eidx] = u; w[eidx] = ww; nxt[eidx] = head[v]; head[v] = eidx++;
+int cmp_pos(const void *aa, const void *bb) {
+    const struct pos *A = aa, *B = bb;
+    __uint128_t lhs = (__uint128_t)A->num * B->den;
+    __uint128_t rhs = (__uint128_t)B->num * A->den;
+    if (lhs < rhs) return -1;
+    if (lhs > rhs) return  1;
+    return 0;
 }
 
-// --- the parking‐lot data structures and routines ---
-int c[MAXN];                // capacity per slot
-ull ls[MAXN];               // each student's notification delay
-int student_slot[MAXN];     // which slot the student currently occupies (-1 if none)
-
-struct pos {
-    int s;       // student id
-    ull num, den;// fractional position
-};
-struct pos slots[MAXN][30];
-int slot_size[MAXN];
-
-struct notif {
-    ull t;
-    int s;
-};
-struct notif all_notifs[600000];
-int notif_count = 0, fetched_ptr = 0;
-
-ull gcd(ull a, ull b) {
+ull gcd(ull a, ull b){
     return b ? gcd(b, a % b) : a;
 }
 
-void insert_notif(ull t, int s) {
-    int pos = notif_count++;
-    // insert in sorted order by t
-    while (pos > 0 && all_notifs[pos-1].t > t) {
-        all_notifs[pos] = all_notifs[pos-1];
-        pos--;
-    }
-    all_notifs[pos].t = t;
-    all_notifs[pos].s = s;
-}
-
-void do_fetch(ull T) {
-    int cnt = 0;
-    while (fetched_ptr < notif_count && all_notifs[fetched_ptr].t <= T) {
-        fetched_ptr++;
-        cnt++;
-    }
-    printf("At %llu, %d bicycles was fetched.\n", T, cnt);
-}
-
 void insert_bike(int s, int x, ull pnum, ull pden, int output) {
-    // record
+    
     int sz = slot_size[x]++;
     slots[x][sz].s   = s;
     slots[x][sz].num = pnum;
     slots[x][sz].den = pden;
     student_slot[s] = x;
-    // simplify
+    
     ull g = gcd(pnum,pden);
     pnum /= g; pden /= g;
     if (!output) return;
@@ -138,15 +223,6 @@ void insert_bike(int s, int x, ull pnum, ull pden, int output) {
     } else {
         printf("%d parked at (%d, %llu/%llu).\n", s, x, pnum, pden);
     }
-}
-
-int cmp_pos(const void *aa, const void *bb) {
-    const struct pos *A = aa, *B = bb;
-    __uint128_t lhs = (__uint128_t)A->num * B->den;
-    __uint128_t rhs = (__uint128_t)B->num * A->den;
-    if (lhs < rhs) return -1;
-    if (lhs > rhs) return  1;
-    return 0;
 }
 
 void park_bike(int s, int x, int p, int output) {
@@ -211,109 +287,64 @@ void park_bike(int s, int x, int p, int output) {
     }
 }
 
-int main(){
-    int n,m,q;
-    scanf("%d%d%d",&n,&m,&q);
-    // capacities
-    for(int i=0;i<n;i++) scanf("%d",&c[i]);
-    // student delays
-    for(int i=0;i<m;i++){
-        scanf("%llu",&ls[i]);
-        student_slot[i] = -1;
+int lca(int a, int b) {
+    if (depth[a] < depth[b]){ 
+        int t=a; a=b; b=t; 
     }
-    // build tree
-    memset(head,-1,sizeof head);
-    eidx=0;
-    for(int i=0,u,v,ww;i<n-1;i++){
-        scanf("%d%d%d",&u,&v,&ww);
-        add_edge(u,v,ww);
-    }
-    // initial DFS/LCA/Euler
-    N = n;
-    memset(bit,0,sizeof(long long)*(n+2));
-    timer=0;
-    depth[0]=0; dist0[0]=0;
-    dfs(0,0);
-    // process queries
-    for(int i=0;i<q;i++){
-        int op; scanf("%d",&op);
-        if(op==0){
-            int s,x,p; scanf("%d%d%d",&s,&x,&p);
-            park_bike(s,x,p,1);
-        }
-        else if(op==1){
-            int s,x,p; scanf("%d%d%d",&s,&x,&p);
-            int src = student_slot[s];
-            if(src==x){
-                printf("%d moved to %d in 0 seconds.\n",s,x);
-                continue;
-            }
-            // remove from old slot
-            if(src!=-1){
-                for(int j=0;j<slot_size[src];j++){
-                    if(slots[src][j].s==s){
-                        for(int k=j;k+1<slot_size[src];k++)
-                            slots[src][k]=slots[src][k+1];
-                        slot_size[src]--;
-                        break;
-                    }
-                }
-            }
-            park_bike(s,x,p,0);
-            long long tc = (src==-1?0:get_dist(src,x));
-            printf("%d moved to %d in %lld seconds.\n",s,x,tc);
-        }
-        else if(op==2){
-            int x; ull T; scanf("%d%llu",&x,&T);
-            for(int j=0;j<slot_size[x];j++){
-                int st = slots[x][j].s;
-                if(student_slot[st]==x){
-                    insert_notif(T + ls[st], st);
-                    student_slot[st] = -1;
-                }
-            }
-            slot_size[x]=0;
-        }
-        else if(op==3){
-            int x; ull T; scanf("%d%llu",&x,&T);
-            int cnt=0, nc=0;
-            struct pos tmp[30];
-            for(int j=0;j<slot_size[x];j++){
-                int st=slots[x][j].s;
-                if(slots[x][j].den>1 && student_slot[st]==x){
-                    insert_notif(T + ls[st], st);
-                    student_slot[st] = -1;
-                    cnt++;
-                } else {
-                    tmp[nc++] = slots[x][j];
-                }
-            }
-            for(int j=0;j<nc;j++) slots[x][j]=tmp[j];
-            slot_size[x]=nc;
-            printf("Rearranged %d bikes in %d.\n",cnt,x);
-        }
-        else if(op==4){
-            ull T; scanf("%llu",&T);
-            do_fetch(T);
-        }
-        else if(op==5){
-            int x,y,d; scanf("%d%d%d",&x,&y,&d);
-            // find old weight
-            long long oldw=0;
-            for(int e=head[x];e!=-1;e=nxt[e]){
-                if(to[e]==y){ oldw=w[e]; break; }
-            }
-            long long delta = (long long)d - oldw;
-            // update both directions
-            for(int e=head[x];e!=-1;e=nxt[e]) if(to[e]==y) w[e]=d;
-            for(int e=head[y];e!=-1;e=nxt[e]) if(to[e]==x) w[e]=d;
-            // pick the deeper node as child
-            int child = (depth[x]>depth[y] ? x : y);
-            // range‑add delta to subtree of child
-            bit_update(tin[child],      delta);
-            if (tout[child]+1 <= N)
-                bit_update(tout[child]+1, -delta);
+    for (int k = MAX_LOG-1; k >= 0; k--) {
+        if (depth[ up[a][k] ] >= depth[b]) {
+            a = up[a][k];
         }
     }
-    return 0;
+    if (a == b) return a;
+    for (int k = MAX_LOG-1; k >= 0; k--) {
+        if (up[a][k] != up[b][k]) {
+            a = up[a][k];
+            b = up[b][k];
+        }
+    }
+    return up[a][0];
+}
+
+long long bit_sum(int i) {
+    long long s = 0;
+    for (; i > 0; i -= i & -i){
+        s += bit[i];
+    }
+    return s;
+}
+
+long long currDist(int v) {
+    return dist0[v] + bit_sum(tin[v]);
+}
+
+long long get_dist(int a, int b) {
+    int c = lca(a,b);
+    return currDist(a) + currDist(b) - 2*currDist(c);
+}
+
+void insert_notif(ull t, int s) {
+    int pos = notif_count++;
+    
+    while (pos > 0 && all_notifs[pos-1].t > t) {
+        all_notifs[pos] = all_notifs[pos-1];
+        pos--;
+    }
+    all_notifs[pos].t = t;
+    all_notifs[pos].s = s;
+}
+
+void do_fetch(ull T) {
+    int cnt = 0;
+    while (fetched_ptr < notif_count && all_notifs[fetched_ptr].t <= T) {
+        fetched_ptr++;
+        cnt++;
+    }
+    printf("At %llu, %d bicycles was fetched.\n", T, cnt);
+}
+
+void bit_update(int i, long long v) {
+    for (; i <= N; i += i & -i){
+        bit[i] += v;
+    }
 }
