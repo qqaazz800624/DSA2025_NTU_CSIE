@@ -1,201 +1,181 @@
-/*  Device Symptom Aggregation –   fast rollback-DSU (800 ms OK)
-   - no duplicate list, no virus-find compression
-   - computer-find : union-by-size, **no path compression**            */
-
 #include <stdio.h>
 #include <stdlib.h>
 #include <assert.h>
 
 #define MAXN 500005
-#define NIL  (-1LL)
+#define NIL   (-1LL)
 
-/* ---------- very fast integer input ---------- */
+/* ---------- fast input ---------- */
 static inline int rd(void){
     int c, x = 0;
     while((c = getchar_unlocked()) < '0');
-    do{ x = x*10 + (c & 15); c = getchar_unlocked(); }while(c >= '0');
+    do{ x = x*10 + (c&15); c=getchar_unlocked(); }while(c>='0');
     return x;
 }
 
 /* ---------- rollback stack ---------- */
-typedef struct { long long *ptr, oldv; } Modify;
-/* 650 萬格 ≈ 100 MB，已足夠最壞情況（實測 < 30 MB 用量） */
-static Modify *stk;
-static int     top = 0;
-static int     opId = 0;          /* # reversible ops already done      */
-static int    *hist;              /* hist[opId] = #MODs in that op      */
+typedef struct{ long long *ptr, oldv; } Modify;
+static Modify *stk;            static int top=0, cap=1<<20;
+static int opId=0;             static int hist[MAXN+5];
 
-static inline void MOD(long long *p,long long v){
-    stk[top++] = (Modify){p,*p};
-    ++hist[opId];
-    *p = v;
+static inline void ensure(void){
+    if(top==cap){
+        cap <<= 1;
+        stk = (Modify*)realloc(stk,sizeof*stk*cap);
+        assert(stk);
+    }
 }
+#define MOD(P,VAL)  ( ensure(), stk[top++] = (Modify){(long long*)(P), *(P)}, \
+                      ++hist[opId], *(P) = (VAL) )
+
 static inline void revertLast(void){
-    for(int n = hist[--opId]; n--; ){
+    if(!opId) return;
+    for(int n=hist[--opId]; n--; ){
         Modify m = stk[--top];
         *m.ptr = m.oldv;
     }
 }
 
-/* ---------- tables ---------- */
-/* computer DSU + network list */
-static long long cPar[MAXN], cSize[MAXN], cDom[MAXN];
-static long long nHead[MAXN], nTail[MAXN], nNxt[MAXN], nPrv[MAXN];
-/* virus DSU + virus list */
-static long long vPar[MAXN], vLvl[MAXN], vCnt[MAXN], vTag[MAXN];
-static long long vHead[MAXN], vTail[MAXN], vNxt[MAXN], vPrv[MAXN];
-/* per computer */
-static long long baseDmg[MAXN], offset[MAXN], curVir[MAXN];
+/* ---------- arrays ---------- */
+static int    cp[MAXN], csz[MAXN], cVirus[MAXN];
+static long long shift_[MAXN], snap[MAXN];
 
-/* ---------- find ---------- */
-static inline long long findC(long long x){      /* no compression */
-    while(cPar[x]!=x) x=cPar[x];
-    return x;
-}
-static inline long long findV(long long x){      /* keep virus list stable */
-    while(vPar[x]!=x) x=vPar[x];
-    return x;
-}
+static int    vp[MAXN], vLvl[MAXN], vCnt[MAXN];
+static long long vTag[MAXN];
 
-/* ---------- list helpers ---------- */
-static inline void detachNet(long long u,long long r){
-    long long p=nPrv[u], n=nNxt[u];
-    if(p!=NIL) MOD(&nNxt[p],n); else MOD(&nHead[r],n);
-    if(n!=NIL) MOD(&nPrv[n],p); else MOD(&nTail[r],p);
-    MOD(&nPrv[u],NIL); MOD(&nNxt[u],NIL);
+/* ---------- find (computer) ---------- */
+static int findC(int x){
+    if(cp[x]==x) return x;
+    int p = cp[x];
+    int r = findC(p);
+    if(cp[x]!=r) MOD(&cp[x], r);            /* path-halving */
+    MOD(&shift_[x], shift_[x] + shift_[p]); /* accumulate edge weight */
+    return r;
 }
-static inline void appendVir(long long R,long long u){
-    if(vHead[R]==NIL){
-        MOD(&vHead[R],u); MOD(&vTail[R],u);
-        MOD(&vPrv[u],NIL); MOD(&vNxt[u],NIL);
-    }else{
-        long long t=vTail[R];
-        MOD(&vNxt[t],u);  MOD(&vPrv[u],t);
-        MOD(&vNxt[u],NIL); MOD(&vTail[R],u);
-    }
-    MOD(&vCnt[R],vCnt[R]+1);
-}
-static inline void detachVir(long long u,long long R){
-    long long p=vPrv[u], n=vNxt[u];
-    if(p!=NIL) MOD(&vNxt[p],n); else MOD(&vHead[R],n);
-    if(n!=NIL) MOD(&vPrv[n],p); else MOD(&vTail[R],p);
-    MOD(&vPrv[u],NIL); MOD(&vNxt[u],NIL);
-    MOD(&vCnt[R],vCnt[R]-1);
-}
-static inline void spliceVir(long long A,long long B){
-    if(vHead[B]==NIL) return;
-    if(vHead[A]==NIL){
-        MOD(&vHead[A],vHead[B]); MOD(&vTail[A],vTail[B]);
-    }else{
-        long long t=vTail[A];
-        MOD(&vNxt[t],vHead[B]); MOD(&vPrv[vHead[B]],t);
-        MOD(&vTail[A],vTail[B]);
-    }
-    MOD(&vHead[B],NIL); MOD(&vTail[B],NIL);
-}
+/* ---------- find (virus, no compression) ---------- */
+static int findV(int x){ while(vp[x]!=x) x = vp[x]; return x; }
+
 
 /* ---------- operations ---------- */
-static void opConnect(int x,int y){
-    long long r1=findC(x), r2=findC(y); if(r1==r2) return;
-    long long v1=findV(cDom[r1]), v2=findV(cDom[r2]);
-    long long win = (vLvl[v1]>=vLvl[v2])? v1 : v2;
-
-    /* union by size – keep r1 larger */
-    if(cSize[r1] < cSize[r2]){ long long t=r1;r1=r2;r2=t; }
-
-    /* merge DSU & list */
-    MOD(&cPar[r2],r1);  MOD(&cSize[r1],cSize[r1]+cSize[r2]);
-    if(nHead[r2]!=NIL){
-        MOD(&nNxt[nTail[r1]],nHead[r2]);
-        MOD(&nPrv[nHead[r2]],nTail[r1]);
-        MOD(&nTail[r1],nTail[r2]);
-        MOD(&nHead[r2],NIL); MOD(&nTail[r2],NIL);
+static void opConnect(int x,int y)
+{
+    int rx = findC(x);          /* current roots of the two networks   */
+    int ry = findC(y);
+    if (rx == ry){              /* already the same network – undo-able */
+        return;                 /* (main() will still ++opId afterwards)*/
     }
-    MOD(&cDom[r1],win);
 
-    /* change virus of all nodes (old ≠ win) */
-    for(long long u=nHead[r1]; u!=NIL; u=nNxt[u]){
-        long long old=findV(curVir[u]); if(old==win) continue;
-        detachVir(u,old); appendVir(win,u);
+    /* viruses that currently dominate the two roots                    */
+    int vx = findV(cVirus[rx]);
+    int vy = findV(cVirus[ry]);
 
-        long long dmg = baseDmg[u] + (vTag[old]-offset[u]);
-        MOD(&baseDmg[u],dmg); MOD(&offset[u],vTag[win]); MOD(&curVir[u],win);
+    /* -------- size heuristic: always attach the smaller tree -------- */
+    if (csz[rx] < csz[ry]){          /* swap roots **and their viruses** */
+        int tmp = rx;  rx = ry;  ry = tmp;
+        tmp    = vx;  vx = vy;  vy = tmp;
     }
+
+    /* -------- decide which virus wins (rule uses x-side on tie) ----- */
+    int win  = (vLvl[vx] >= vLvl[vy]) ? vx : vy;
+    int lose = (win == vx)            ? vy : vx;
+
+    /* -------- union the two trees ----------------------------------- */
+    MOD(&cp[ry] , rx);                       /* parent pointer          */
+    MOD(&csz[rx], csz[rx] + csz[ry]);        /* subtree size            */
+
+    /* -------- keep all existing damage numbers unchanged ------------ */
+    long long tagRxOld = vTag[vx];           /* tag before the merge    */
+    long long tagRyOld = vTag[vy];
+    long long tagWin   = vTag[win];
+
+    /* 1. if root-rx changes its virus, adjust its snap                 */
+    MOD(&snap[rx], snap[rx] + (tagWin - tagRxOld));
+
+    /* 2. set the edge weight ry→rx so every node below ry
+          continues to see the same damage                               */
+    long long newEdge = (tagRyOld - tagWin) + (snap[rx] - snap[ry]);
+    MOD(&shift_[ry], shift_[ry] + newEdge);
+
+    /* 3. align ry.snap to the new root’s snap                          */
+    MOD(&snap[ry], snap[rx]);
+
+    /* 4. bookkeeping for the dominant virus                            */
+    MOD(&cVirus[rx], win);
+    MOD(&vCnt[win] , vCnt[win] + vCnt[lose]);
+    MOD(&vCnt[lose], 0);
 }
 
-static inline void opEvolve (int t){ long long r=findV(t); MOD(&vLvl[r],vLvl[r]+1); }
-static inline void opAttack (int t){ long long r=findV(t); MOD(&vTag[r],vTag[r]+vLvl[r]); }
+
+static inline void opEvolve(int t){ int r=findV(t); MOD(&vLvl[r], vLvl[r]+1); }
+static inline void opAttack(int c){                 /* NOTE: c is *computer* id */
+    int root = findC(c); int v=findV(cVirus[root]);
+    MOD(&vTag[v], vTag[v]+vLvl[v]);
+}
 
 static void opFusion(int a,int b){
-    long long r1=findV(a), r2=findV(b); if(r1==r2) return;
-    if(vCnt[r1] < vCnt[r2]){ long long t=r1;r1=r2;r2=t; }
+    int ra=findV(a), rb=findV(b); if(ra==rb) return;
+    if(vCnt[ra] < vCnt[rb]){ int t=ra; ra=rb; rb=t; }
 
-    MOD(&vPar[r2],r1); MOD(&vLvl[r1],vLvl[r1]+vLvl[r2]);
-    MOD(&vCnt[r1],vCnt[r1]+vCnt[r2]); MOD(&vCnt[r2],0);
-
-    for(long long u=vHead[r2]; u!=NIL; u=vNxt[u]){
-        long long dmg=baseDmg[u] + (vTag[r2]-offset[u]);
-        MOD(&baseDmg[u],dmg); MOD(&offset[u],vTag[r1]); MOD(&curVir[u],r1);
-    }
-    spliceVir(r1,r2); MOD(&vTag[r2],vTag[r1]);
+    MOD(&vp[rb], ra);
+    MOD(&vLvl[ra], vLvl[ra]+vLvl[rb]);
+    MOD(&vTag[ra], vTag[ra]+vTag[rb]);
+    MOD(&vCnt[ra], vCnt[ra]+vCnt[rb]);
+    MOD(&vCnt[rb], 0);
 }
 
 static void opReinstall(int k,int s){
-    long long netR=findC(k), oldV=findV(curVir[k]), newV=findV(s);
-    detachNet(k,netR); MOD(&cSize[netR],cSize[netR]-1);
+    int rk=findC(k);
+    int oldV=findV(cVirus[rk]), newV=findV(s);
 
-    if(netR==k && cSize[k]>0){              /* promote next node */
-        long long nr=nHead[k];
-        MOD(&cPar[nr],nr); MOD(&cSize[nr],cSize[k]);
-        MOD(&cDom[nr],cDom[k]);
-        MOD(&nHead[nr],nHead[k]); MOD(&nTail[nr],nTail[k]);
-        for(long long u=nHead[nr];u!=NIL;u=nNxt[u]) if(u!=nr) MOD(&cPar[u],nr);
-        MOD(&cSize[k],0); MOD(&nHead[k],NIL); MOD(&nTail[k],NIL);
-    }
-    MOD(&cPar[k],k); MOD(&cSize[k],1); MOD(&cDom[k],newV);
-    MOD(&nHead[k],k); MOD(&nTail[k],k);
+    /* flush personal pending damage into shift_[k] */
+    long long acc=0, cur=k;
+    while(cur!=rk){ acc+=shift_[cur]; cur=cp[cur]; }
+    long long dmg = acc + shift_[rk] + vTag[oldV] - snap[rk];
+    MOD(&shift_[k], dmg);
 
-    if(oldV!=newV){ detachVir(k,oldV); appendVir(newV,k); }
-    MOD(&baseDmg[k],0); MOD(&offset[k],vTag[newV]); MOD(&curVir[k],newV);
+    /* detach k as a singleton */
+    MOD(&cp[k], k); MOD(&shift_[k], 0);
+    MOD(&csz[rk], csz[rk]-1);
+
+    /* virus population update */
+    MOD(&vCnt[oldV], vCnt[oldV]-1);
+    MOD(&vCnt[newV], vCnt[newV]+1);
+
+    MOD(&cVirus[k], newV);
+    MOD(&snap[k]  , vTag[newV]);
 }
 
-static inline void opStatus(int k){
-    long long r=findV(curVir[k]);
-    long long dmg=baseDmg[k] + (vTag[r]-offset[k]);
-    printf("%lld %lld %lld\n", dmg, vLvl[r], vCnt[r]);
+static void opStatus(int k){
+    int x=k; long long acc=0;
+    while(cp[x]!=x){ acc+=shift_[x]; x=cp[x]; }
+    int root=x, v=findV(cVirus[root]);
+    long long dmg = acc + shift_[root] + vTag[v] - snap[root];
+    printf("%lld %d %d\n", dmg, vLvl[v], vCnt[v]);
 }
 
 /* ---------- main ---------- */
 int main(void){
-    /* 預先一次配置足夠的 rollback stack & hist */
-    stk  = (Modify*)malloc(sizeof(Modify)*6500000);
-    hist = (int*)   calloc(MAXN, sizeof(int));
+    stk = (Modify*)malloc(sizeof(Modify)*cap);
 
-    int N = rd(), Q = rd();
-
+    int N=rd(), Q=rd();
     for(int i=1;i<=N;i++){
-        cPar[i]=i; cSize[i]=1; cDom[i]=i;
-        nHead[i]=nTail[i]=i; nNxt[i]=nPrv[i]=NIL;
-
-        vPar[i]=i; vLvl[i]=1; vCnt[i]=1; vTag[i]=0;
-        vHead[i]=vTail[i]=i; vNxt[i]=vPrv[i]=NIL;
-
-        baseDmg[i]=0; offset[i]=0; curVir[i]=i;
+        cp[i]=i; csz[i]=1; cVirus[i]=i; shift_[i]=0; snap[i]=0;
+        vp[i]=i; vLvl[i]=1; vTag[i]=0; vCnt[i]=1;
     }
 
     while(Q--){
         int tp = rd();
-        if(tp!=6 && tp!=7) hist[opId]=0;
+        if(tp!=6 && tp!=7) hist[opId]=0;   /* open a fresh slot */
 
         switch(tp){
-            case 1:{ int x=rd(),y=rd(); opConnect(x,y); ++opId; } break;
-            case 2:{ opEvolve(rd()); ++opId; } break;
-            case 3:{ opAttack(rd()); ++opId; } break;
-            case 4:{ int k=rd(),s=rd(); opReinstall(k,s); ++opId; } break;
-            case 5:{ int a=rd(),b=rd(); opFusion(a,b); ++opId; } break;
-            case 6:{ opStatus(rd()); } break;
-            case 7:{ revertLast(); } break;
-            default: assert(0);
+        case 1:{ int x=rd(),y=rd(); opConnect(x,y); ++opId; } break;
+        case 2:{ int t=rd();        opEvolve(t);   ++opId; } break;
+        case 3:{ int c=rd();        opAttack(c);   ++opId; } break;
+        case 4:{ int k=rd(),s=rd(); opReinstall(k,s); ++opId;} break;
+        case 5:{ int a=rd(),b=rd(); opFusion(a,b); ++opId; } break;
+        case 6:{ int k=rd();        opStatus(k);         } break;
+        case 7:{ revertLast();                           } break;
+        default: assert(0);
         }
     }
     return 0;

@@ -1,205 +1,185 @@
-/*  Device Symptom Aggregation – rollback-DSU, no-dedup ultra-fast  */
-
 #include <stdio.h>
 #include <stdlib.h>
 #include <assert.h>
 
 #define MAXN 500005
-#define NIL  (-1LL)
 
-/* ---------- fast integer input ---------- */
+/* ---------- fast input ---------- */
 static inline int rd(void){
     int c, x = 0;
     while((c = getchar_unlocked()) < '0');
-    do{ x = x*10 + (c & 15); c = getchar_unlocked(); }while(c >= '0');
+    do{ x = x * 10 + (c & 15); c = getchar_unlocked(); } while(c >= '0');
     return x;
 }
 
-/* ---------- rollback stack -------------- */
+/* ---------- rollback stack ---------- */
 typedef struct { long long *ptr, oldv; } Modify;
-static Modify *stk;               static int top = 0, cap = 1<<20;
-static int opId = 0;              static int hist[MAXN];
+static Modify *stk;
+static int top = 0, cap = 1 << 20;
+static int opId = 0, hist[MAXN + 5];
 
-static inline void ensure(void){
-    if(top == cap){
+static inline void ensure(void) {
+    if (top == cap) {
         cap <<= 1;
-        stk = (Modify*)realloc(stk, sizeof *stk * cap);
-        if(!stk){ perror("realloc"); exit(1); }
+        stk = (Modify*)realloc(stk, sizeof(Modify) * cap);
+        assert(stk);
     }
 }
-static inline void MOD(long long *p,long long v){
-    ensure(); stk[top++] = (Modify){p,*p}; ++hist[opId]; *p = v;
-}
-static inline void revertLast(void){
-    if(!opId) return;
-    for(int n = hist[--opId]; n--; ){
+#define MOD(P, VAL) ( ensure(), stk[top++] = (Modify){(long long*)(P), *(P)}, ++hist[opId], *(P) = (VAL) )
+static inline void revertLast(void) {
+    if (!opId) return;
+    for (int n = hist[--opId]; n--;) {
         Modify m = stk[--top];
         *m.ptr = m.oldv;
     }
 }
 
-/* ---------- global tables --------------- */
-/* computer DSU + network list */
-static long long cPar[MAXN], cSize[MAXN], cDom[MAXN];
-static long long nHead[MAXN], nTail[MAXN], nNxt[MAXN], nPrv[MAXN];
-/* virus DSU + virus list */
-static long long vPar[MAXN], vLvl[MAXN], vCnt[MAXN], vTag[MAXN];
-static long long vHead[MAXN], vTail[MAXN], vNxt[MAXN], vPrv[MAXN];
-/* per computer */
-static long long baseDmg[MAXN], offset[MAXN], curVir[MAXN];
+/* ---------- global arrays ---------- */
+static int cp[MAXN], csz[MAXN], cVirus[MAXN];
+static long long shift_[MAXN], snap[MAXN];
 
-/* ---------- DSU find -------------------- */
-/* computers : path-halving (rollback-safe) */
-static inline long long findC(long long x){
-    while(cPar[x] != x){
-        long long p = cPar[x], g = cPar[p];
-        if(g != p) MOD(&cPar[x], g);
-        x = p;
+static int vp[MAXN], vLvl[MAXN], vCnt[MAXN];
+static long long vEdge[MAXN];  // edge weight to parent in virus tree
+
+/* ---------- helpers ---------- */
+static int findC(int x) {
+    if (cp[x] == x) return x;
+    int p = cp[x];
+    int r = findC(p);
+    if (cp[x] != r) MOD(&cp[x], r);
+    MOD(&shift_[x], shift_[x] + shift_[p]);
+    return r;
+}
+
+static int findV(int x) {
+    if (vp[x] == x) return x;
+    int p = vp[x];
+    int r = findV(p);
+    MOD(&vEdge[x], vEdge[x] + vEdge[p]);
+    MOD(&vp[x], r);
+    return r;
+}
+
+static long long tagOf(int v) {
+    long long acc = vEdge[v];
+    while (vp[v] != v) {
+        v = vp[v];
+        acc += vEdge[v];
     }
-    return x;
-}
-/* viruses  : **no compression** */
-static inline long long findV(long long x){
-    while(vPar[x] != x) x = vPar[x];
-    return x;
+    return acc;
 }
 
-/* ---------- list helpers ---------------- */
-static inline void detachNet(long long u,long long r){
-    long long p = nPrv[u], n = nNxt[u];
-    if(p!=NIL) MOD(&nNxt[p],n); else MOD(&nHead[r],n);
-    if(n!=NIL) MOD(&nPrv[n],p); else MOD(&nTail[r],p);
-    MOD(&nPrv[u],NIL); MOD(&nNxt[u],NIL);
-}
+/* ---------- operations ---------- */
+static void opConnect(int x, int y) {
+    int rx = findC(x), ry = findC(y);
+    if (rx == ry) return;
 
-static inline void appendVir(long long R,long long u){
-    if(vHead[R]==NIL){
-        MOD(&vHead[R],u); MOD(&vTail[R],u);
-        MOD(&vPrv[u],NIL); MOD(&vNxt[u],NIL);
-    }else{
-        long long t=vTail[R];
-        MOD(&vNxt[t],u);  MOD(&vPrv[u],t);
-        MOD(&vNxt[u],NIL); MOD(&vTail[R],u);
-    }
-    MOD(&vCnt[R], vCnt[R]+1);
-}
-static inline void detachVir(long long u,long long R){
-    long long p=vPrv[u], n=vNxt[u];
-    if(p!=NIL) MOD(&vNxt[p],n); else MOD(&vHead[R],n);
-    if(n!=NIL) MOD(&vPrv[n],p); else MOD(&vTail[R],p);
-    MOD(&vPrv[u],NIL); MOD(&vNxt[u],NIL);
-    MOD(&vCnt[R], vCnt[R]-1);
-}
-static inline void spliceVir(long long A,long long B){
-    if(vHead[B]==NIL) return;
-    if(vHead[A]==NIL){
-        MOD(&vHead[A],vHead[B]); MOD(&vTail[A],vTail[B]);
-    }else{
-        long long t=vTail[A];
-        MOD(&vNxt[t],vHead[B]); MOD(&vPrv[vHead[B]],t);
-        MOD(&vTail[A],vTail[B]);
-    }
-    MOD(&vHead[B],NIL); MOD(&vTail[B],NIL);
-}
+    int vx = findV(cVirus[rx]);
+    int vy = findV(cVirus[ry]);
 
-/* ---------- operations ------------------ */
-static void opConnect(int x,int y){
-    long long r1=findC(x), r2=findC(y); if(r1==r2) return;
-    long long v1=findV(cDom[r1]), v2=findV(cDom[r2]);
-    long long win = (vLvl[v1] >= vLvl[v2]) ? v1 : v2;
-
-    if(cSize[r1] < cSize[r2]){ long long t=r1;r1=r2;r2=t; }
-    MOD(&cPar[r2],r1);  MOD(&cSize[r1],cSize[r1]+cSize[r2]);
-
-    if(nHead[r2]!=NIL){
-        MOD(&nNxt[nTail[r1]],nHead[r2]);
-        MOD(&nPrv[nHead[r2]],nTail[r1]);
-        MOD(&nTail[r1],nTail[r2]);
-        MOD(&nHead[r2],NIL); MOD(&nTail[r2],NIL);
-    }
-    MOD(&cDom[r1],win);
-
-    for(long long u=nHead[r1]; u!=NIL; u=nNxt[u]){
-        long long old=findV(curVir[u]);
-        if(old!=win){
-            detachVir(u,old); appendVir(win,u);
-            long long dmg = baseDmg[u] + (vTag[old]-offset[u]);
-            MOD(&baseDmg[u],dmg); MOD(&offset[u],vTag[win]); MOD(&curVir[u],win);
-        }
-    }
-}
-
-static inline void opEvolve(int t){ long long r=findV(t); MOD(&vLvl[r],vLvl[r]+1); }
-static inline void opAttack(int t){ long long r=findV(t); MOD(&vTag[r],vTag[r]+vLvl[r]); }
-
-static void opFusion(int a,int b){
-    long long r1=findV(a), r2=findV(b); if(r1==r2) return;
-    if(vCnt[r1] < vCnt[r2]){ long long t=r1;r1=r2;r2=t; }
-
-    MOD(&vPar[r2],r1);
-    MOD(&vLvl[r1],vLvl[r1]+vLvl[r2]);
-    MOD(&vCnt[r1],vCnt[r1]+vCnt[r2]); MOD(&vCnt[r2],0);
-
-    for(long long u=vHead[r2]; u!=NIL; u=vNxt[u]){
-        long long dmg = baseDmg[u] + (vTag[r2]-offset[u]);
-        MOD(&baseDmg[u],dmg); MOD(&offset[u],vTag[r1]); MOD(&curVir[u],r1);
-    }
-    spliceVir(r1,r2); MOD(&vTag[r2],vTag[r1]);
-}
-
-static void opReinstall(int k,int s){
-    long long netR=findC(k), oldV=findV(curVir[k]), newV=findV(s);
-    detachNet(k,netR); MOD(&cSize[netR],cSize[netR]-1);
-
-    if(netR==k && cSize[k]>0){
-        long long nr=nHead[k];
-        MOD(&cPar[nr],nr); MOD(&cSize[nr],cSize[k]);
-        MOD(&cDom[nr],cDom[k]);
-        MOD(&nHead[nr],nHead[k]); MOD(&nTail[nr],nTail[k]);
-        for(long long u=nHead[nr];u!=NIL;u=nNxt[u]) if(u!=nr) MOD(&cPar[u],nr);
-        MOD(&cSize[k],0); MOD(&nHead[k],NIL); MOD(&nTail[k],NIL);
-    }
-    MOD(&cPar[k],k); MOD(&cSize[k],1); MOD(&cDom[k],newV);
-    MOD(&nHead[k],k); MOD(&nTail[k],k);
-
-    if(oldV!=newV){ detachVir(k,oldV); appendVir(newV,k); }
-    MOD(&baseDmg[k],0); MOD(&offset[k],vTag[newV]); MOD(&curVir[k],newV);
-}
-
-static inline void opStatus(int k){
-    long long r = findV(curVir[k]);
-    long long dmg = baseDmg[k] + (vTag[r]-offset[k]);
-    printf("%lld %lld %lld\n", dmg, vLvl[r], vCnt[r]);
-}
-
-/* ---------------- main ------------------- */
-int main(void){
-    stk = (Modify*)malloc(sizeof(Modify)*cap);
-
-    int N=rd(), Q=rd();
-
-    for(int i=1;i<=N;i++){
-        cPar[i]=i; cSize[i]=1; cDom[i]=i;
-        nHead[i]=nTail[i]=i; nNxt[i]=nPrv[i]=NIL;
-
-        vPar[i]=i; vLvl[i]=1; vCnt[i]=1; vTag[i]=0;
-        vHead[i]=vTail[i]=i; vNxt[i]=vPrv[i]=NIL;
-
-        baseDmg[i]=0; offset[i]=0; curVir[i]=i;
+    if (csz[rx] < csz[ry]) {
+        int tmp = rx; rx = ry; ry = tmp;
+        tmp = vx; vx = vy; vy = tmp;
     }
 
-    while(Q--){
+    int win  = (vLvl[vx] >= vLvl[vy]) ? vx : vy;
+    int lose = (win == vx) ? vy : vx;
+
+    long long tagRxOld = tagOf(vx);
+    long long tagRyOld = tagOf(vy);
+    long long tagWin   = tagOf(win);
+    long long tagLose  = tagOf(lose);  // ⚠️ Needed to compute ry shift correctly
+
+    MOD(&cp[ry], rx);
+    MOD(&csz[rx], csz[rx] + csz[ry]);
+
+    MOD(&snap[rx], snap[rx] + (tagWin - tagRxOld));
+    MOD(&shift_[ry], shift_[ry] + (tagLose - tagWin));
+    MOD(&snap[ry], snap[rx]);
+
+    MOD(&cVirus[rx], win);
+    MOD(&vCnt[win], vCnt[win] + vCnt[lose]);
+    MOD(&vCnt[lose], 0);
+}
+
+static void opEvolve(int t) {
+    int r = findV(t);
+    MOD(&vLvl[r], vLvl[r] + 1);
+}
+
+static void opAttack(int c) {
+    int root = findC(c);
+    int v = findV(cVirus[root]);
+    MOD(&vEdge[v], vEdge[v] + vLvl[v]);
+}
+
+static void opFusion(int a, int b) {
+    int ra = findV(a), rb = findV(b);
+    if (ra == rb) return;
+    if (vCnt[ra] < vCnt[rb]) { int t = ra; ra = rb; rb = t; }
+
+    long long tagRa = tagOf(ra);
+    long long tagRb = tagOf(rb);
+
+    MOD(&vp[rb], ra);
+    MOD(&vEdge[rb], tagRb - tagRa);
+
+    MOD(&vLvl[ra], vLvl[ra] + vLvl[rb]);
+    MOD(&vCnt[ra], vCnt[ra] + vCnt[rb]);
+    MOD(&vCnt[rb], 0);
+}
+
+static void opReinstall(int k, int s) {
+    int rk = findC(k);
+    int oldV = findV(cVirus[rk]), newV = findV(s);
+
+    long long acc = 0, cur = k;
+    while (cur != rk) { acc += shift_[cur]; cur = cp[cur]; }
+    long long dmg = acc + shift_[rk] + tagOf(oldV) - snap[rk];
+    MOD(&shift_[k], dmg);
+
+    MOD(&cp[k], k);
+    MOD(&shift_[k], 0);
+    MOD(&csz[rk], csz[rk] - 1);
+
+    MOD(&vCnt[oldV], vCnt[oldV] - 1);
+    MOD(&vCnt[newV], vCnt[newV] + 1);
+
+    MOD(&cVirus[k], newV);
+    MOD(&snap[k], tagOf(newV));
+}
+
+static void opStatus(int k) {
+    int x = k; long long acc = 0;
+    while (cp[x] != x) { acc += shift_[x]; x = cp[x]; }
+    int root = x;
+    int v = findV(cVirus[root]);
+    long long dmg = acc + shift_[root] + tagOf(v) - snap[root];
+    printf("%lld %d %d\n", dmg, vLvl[v], vCnt[v]);
+}
+
+/* ---------- main ---------- */
+int main(void) {
+    stk = (Modify*)malloc(sizeof(Modify) * cap);
+
+    int N = rd(), Q = rd();
+    for (int i = 1; i <= N; i++) {
+        cp[i] = i; csz[i] = 1; cVirus[i] = i; shift_[i] = 0; snap[i] = 0;
+        vp[i] = i; vLvl[i] = 1; vEdge[i] = 0; vCnt[i] = 1;
+    }
+
+    while (Q--) {
         int tp = rd();
-        if(tp!=6 && tp!=7) hist[opId]=0;
+        if (tp != 6 && tp != 7) hist[opId] = 0;
 
-        switch(tp){
-            case 1:{ int x=rd(),y=rd(); opConnect(x,y); ++opId; } break;
-            case 2:{ int t=rd(); opEvolve(t); ++opId; } break;
-            case 3:{ int t=rd(); opAttack(t); ++opId; } break;
-            case 4:{ int k=rd(),s=rd(); opReinstall(k,s); ++opId; } break;
-            case 5:{ int a=rd(),b=rd(); opFusion(a,b); ++opId; } break;
-            case 6:{ int k=rd(); opStatus(k); } break;
-            case 7:{ revertLast(); } break;
+        switch (tp) {
+            case 1: { int x = rd(), y = rd(); opConnect(x, y); ++opId; } break;
+            case 2: { int t = rd(); opEvolve(t); ++opId; } break;
+            case 3: { int c = rd(); opAttack(c); ++opId; } break;
+            case 4: { int k = rd(), s = rd(); opReinstall(k, s); ++opId; } break;
+            case 5: { int a = rd(), b = rd(); opFusion(a, b); ++opId; } break;
+            case 6: { int k = rd(); opStatus(k); } break;
+            case 7: { revertLast(); } break;
             default: assert(0);
         }
     }
